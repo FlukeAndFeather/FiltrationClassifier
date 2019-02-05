@@ -1,34 +1,18 @@
 library(tidyverse)
 library(lubridate)
+# Also depends on RcppRoll (on CRAN) and patchwork (on GitHub)
+# devtools::install_github("thomasp85/patchwork")
 
 lungetable <- read_csv("data/bw170813-44/bw170813-44LungeTable.csv")
+# Speed is smoothed over 5s and Gyro-Y is smoothed over 1.5s
 prh <- read_csv("data/bw170813-44/bw170813-44 10Hzprh.csv") %>%
-  mutate(speed0.5s = RcppRoll::roll_mean(speed, n = 5, fill = NA),
-         speed1.0s = RcppRoll::roll_mean(speed, n = 10, fill = NA),
-         speed1.5s = RcppRoll::roll_mean(speed, n = 15, fill = NA),
-         speed2.0s = RcppRoll::roll_mean(speed, n = 20, fill = NA),
-         speed2.5s = RcppRoll::roll_mean(speed, n = 25, fill = NA),
-         speed3.0s = RcppRoll::roll_mean(speed, n = 30, fill = NA),
-         speed3.5s = RcppRoll::roll_mean(speed, n = 15, fill = NA),
-         speed4.0s = RcppRoll::roll_mean(speed, n = 20, fill = NA),
-         speed4.5s = RcppRoll::roll_mean(speed, n = 25, fill = NA),
-         speed5.0s = RcppRoll::roll_mean(speed, n = 30, fill = NA),
-         Gy0.5s = RcppRoll::roll_mean(Gy, n = 5, fill = NA),
-         Gy1.0s = RcppRoll::roll_mean(Gy, n = 10, fill = NA),
-         Gy1.5s = RcppRoll::roll_mean(Gy, n = 15, fill = NA),
-         Gy2.0s = RcppRoll::roll_mean(Gy, n = 20, fill = NA),
-         Gy2.5s = RcppRoll::roll_mean(Gy, n = 25, fill = NA),
-         Gy3.0s = RcppRoll::roll_mean(Gy, n = 30, fill = NA),
-         Gy3.5s = RcppRoll::roll_mean(Gy, n = 15, fill = NA),
-         Gy4.0s = RcppRoll::roll_mean(Gy, n = 20, fill = NA),
-         Gy4.5s = RcppRoll::roll_mean(Gy, n = 25, fill = NA),
-         Gy5.0s = RcppRoll::roll_mean(Gy, n = 30, fill = NA),
+  mutate(speed = RcppRoll::roll_mean(speed, n = 30, fill = NA),
+         Gy = RcppRoll::roll_mean(Gy, n = 15, fill = NA),
          pitch = pitch * 180/pi,
          roll = roll * 180/pi)
 
 # Plot a lunge + 5min
 # Returns a ggplot object
-# Speed is smoothed over 5s and Gyro-Y is smoothed over 1.5s
 plot_lunge <- function(idx) {
   lunge_idx <- lungetable$LungeI[idx]
   lunge_time <- prh$datetime[lunge_idx]
@@ -48,79 +32,77 @@ plot_lunge <- function(idx) {
     gather(event, secs_since, Lunge:Purge3) %>%
     mutate(secs_since = find_nearest(secs_since)) %>%
     left_join(plot_data_prh, by = "secs_since")
+  
+  plot_theme_last <- theme_classic() +
+    theme(axis.ticks.x = element_blank())
+  
+  plot_theme <- plot_theme_last +
+    theme(axis.text.x = element_blank(),
+          axis.title.x = element_blank(),
+          axis.line = element_line(size = 0.2))
+  
   # depth ~ time
   p1 <- ggplot(mapping = aes(secs_since, p)) +
     geom_line(data = plot_data_prh) +
-    geom_point(data = plot_data_lunge,
-               size = 3,
-               col = 'red') +
+    geom_vline(aes(xintercept = secs_since),
+               plot_data_lunge,
+               linetype = "dashed") +
     scale_y_reverse() +
-    theme_classic() +
-    theme(axis.text.x = element_blank(),
-          axis.ticks.x = element_blank(),
-          axis.title.x = element_blank(),
-          axis.line = element_line(size = 0.2)) +
+    plot_theme +
     labs(y = "Depth (m)") 
   # speed ~ time
-  p2 <- ggplot(mapping = aes(secs_since, speed5.0s)) +
+  p2 <- ggplot(mapping = aes(secs_since, speed)) +
     geom_line(data = plot_data_prh) +
-    geom_point(data = plot_data_lunge,
-               size = 3,
-               col = "red") +
-    theme_classic() +
-    theme(axis.text.x = element_blank(),
-          axis.ticks.x = element_blank(),
-          axis.title.x = element_blank(),
-          axis.line = element_line(size = 0.2)) +
+    geom_vline(aes(xintercept = secs_since),
+               plot_data_lunge,
+               linetype = "dashed") +
+    plot_theme +
     labs(y = "Speed (m/s)") 
-  # pitch ~ time
-  p3 <- ggplot(mapping = aes(secs_since, pitch)) +
+  # pitch, roll ~ time
+  # rescale roll limits (-120, 120) to pitch limits (-90, 90)
+  pr_data <- plot_data_prh %>% 
+    rename(Pitch = pitch, Roll = roll) %>%
+    gather(orientation, value, Pitch:Roll)
+  roll_axis <- sec_axis(~ . * 120 / 90,
+                        name = expression("Roll " ( degree )),
+                        breaks = seq(-120, 120, by = 60))
+  p3 <- ggplot(mapping = aes(secs_since)) +
     geom_hline(yintercept = 0,
                size = 0.2) +
-    geom_line(data = plot_data_prh) +
-    geom_point(data = plot_data_lunge,
-               size = 3,
-               col = "red") +
+    # pitch on primary, roll on secondary
+    geom_line(aes(y = value, color = orientation),
+              pr_data) +
+    geom_vline(aes(xintercept = secs_since),
+               plot_data_lunge,
+               linetype = "dashed") +
     scale_y_continuous(limits = c(-90, 90),
-                       breaks = seq(-90, 90, by = 45)) +
-    theme_classic() +
-    theme(axis.text.x = element_blank(),
-          axis.line.x = element_blank(),
-          axis.ticks.x = element_blank(),
-          axis.title.x = element_blank(),
-          axis.line = element_line(size = 0.2)) +
-    labs(y = "Pitch (deg)") 
-  # roll ~ time
-  p4 <- ggplot(mapping = aes(secs_since, roll)) +
-    geom_hline(yintercept = 0,
-               size = 0.2) +
-    geom_line(data = plot_data_prh) +
-    geom_point(data = plot_data_lunge,
-               size = 3,
-               col = "red") +
-    scale_y_continuous(limits = c(-120, 120),
-                       breaks = seq(-120, 120, by = 60)) +
-    theme_classic() +
-    theme(axis.text.x = element_blank(),
-          axis.line.x = element_blank(),
-          axis.ticks.x = element_blank(),
-          axis.title.x = element_blank(),
-          axis.line = element_line(size = 0.2)) +
-    labs(y = "Roll (deg)") 
-  # gyro_y ~ time
-  p5 <- ggplot(mapping = aes(secs_since, Gy1.5s)) +
-    geom_hline(yintercept = 0,
-               size = 0.2) +
-    geom_line(data = plot_data_prh) +
-    geom_point(data = plot_data_lunge,
-               size = 3,
-               col = "red") +
-    scale_x_continuous(breaks = seq(-60, 240, by = 60)) +
-    theme_classic() +
+                       breaks = seq(-90, 90, by = 45),
+                       sec.axis = roll_axis) +
+    scale_color_manual(values = c("red", "blue")) +
+    plot_theme +
     theme(axis.line.x = element_blank(),
-          axis.line = element_line(size = 0.2)) +
+          # Color-code y-axes
+          axis.text.y.left = element_text(color = "red"),
+          axis.line.y.left = element_line(color = "red"),
+          axis.title.y.left = element_text(color = "red"),
+          axis.text.y.right = element_text(color = "blue"),
+          axis.line.y.right = element_line(color = "blue"),
+          axis.title.y.right = element_text(color = "blue"),
+          legend.position = "none") +
+    labs(y = expression("Pitch (" ( degree ))) 
+  # gyro_y ~ time
+  p4 <- ggplot(mapping = aes(secs_since, Gy)) +
+    geom_hline(yintercept = 0,
+               size = 0.2) +
+    geom_line(data = plot_data_prh) +
+    geom_vline(aes(xintercept = secs_since),
+               plot_data_lunge,
+               linetype = "dashed") +
+    scale_x_continuous(breaks = seq(-60, 240, by = 60)) +
+    plot_theme_last +
+    theme(axis.line.x = element_blank()) +
     labs(x = "Seconds since lunge",
          y = "Gyro-Y (rad/s)")
   
-  p1 + p2 + p3 + p4 + p5 + patchwork::plot_layout(ncol = 1)
+  p1 + p2 + p3 + p4 + patchwork::plot_layout(ncol = 1)
 }
