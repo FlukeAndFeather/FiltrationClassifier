@@ -104,5 +104,5 @@ plot_lunge <- function(idx) {
     labs(x = "Seconds since lunge",
          y = "Gyro-Y (rad/s)")
   
-  p1 + p2 + p3 + p4 + patchwork::plot_layout(ncol = 1)
+  p1 + p2 + p3 + p4 + patchwork::plot_layout(ncol = 1, heights = c(1, 1, 2, 2))
 }
