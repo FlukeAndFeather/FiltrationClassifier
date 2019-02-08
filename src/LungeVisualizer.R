@@ -42,11 +42,21 @@ plot_lunge <- function(idx) {
           axis.line = element_line(size = 0.2))
   
   # depth ~ time
+  label_data <- plot_data_lunge %>% 
+    mutate(secs_since = secs_since + 2,
+           p = min(plot_data_prh$p - 8))
   p1 <- ggplot(mapping = aes(secs_since, p)) +
     geom_line(data = plot_data_prh) +
     geom_vline(aes(xintercept = secs_since),
                plot_data_lunge,
                linetype = "dashed") +
+    # Label the lunge and purge events
+    geom_text(aes(x = secs_since,
+                  y = p,
+                  label = event),
+              label_data, 
+              hjust = 0,
+              vjust = 1) +
     scale_y_reverse() +
     plot_theme +
     labs(y = "Depth (m)") 
